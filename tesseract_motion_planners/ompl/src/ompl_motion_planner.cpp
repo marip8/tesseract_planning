@@ -32,22 +32,15 @@ TESSERACT_COMMON_IGNORE_WARNINGS_PUSH
 #include <ompl/tools/multiplan/ParallelPlan.h>
 TESSERACT_COMMON_IGNORE_WARNINGS_POP
 
-#include <tesseract_environment/utils.h>
-
-#include <tesseract_motion_planners/planner_utils.h>
-
 #include <tesseract_motion_planners/ompl/ompl_motion_planner.h>
-#include <tesseract_motion_planners/ompl/continuous_motion_validator.h>
-#include <tesseract_motion_planners/ompl/discrete_motion_validator.h>
-#include <tesseract_motion_planners/ompl/profile/ompl_default_plan_profile.h>
-#include <tesseract_motion_planners/ompl/weighted_real_vector_state_sampler.h>
+#include <tesseract_motion_planners/ompl/ompl_motion_planner_status_category.h>
+#include <tesseract_motion_planners/ompl/utils.h>
 #include <tesseract_motion_planners/core/utils.h>
 
-#include <tesseract_command_language/utils.h>
-
-constexpr auto SOLUTION_FOUND{ "Found valid solution" };
-constexpr auto ERROR_INVALID_INPUT{ "Failed invalid input" };
-constexpr auto ERROR_FAILED_TO_FIND_VALID_SOLUTION{ "Failed to find valid solution" };
+#include <tesseract_motion_planners/planner_utils.h>
+#include <tesseract_environment/utils.h>
+#include <tesseract_command_language/command_language.h>
+#include <tesseract_command_language/utils/utils.h>
 
 namespace tesseract_planning
 {
@@ -89,7 +82,14 @@ bool checkGoalState(const ompl::base::ProblemDefinitionPtr& prob_def,
 }
 
 /** @brief Construct a basic planner */
-OMPLMotionPlanner::OMPLMotionPlanner(std::string name) : MotionPlanner(std::move(name)) {}
+OMPLMotionPlanner::OMPLMotionPlanner(std::string name)
+  : name_(std::move(name))
+{
+  if (name_.empty())
+    throw std::runtime_error("OMPLMotionPlanner name is empty!");
+}
+
+const std::string& OMPLMotionPlanner::getName() const { return name_; }
 
 bool OMPLMotionPlanner::terminate()
 {
@@ -97,410 +97,219 @@ bool OMPLMotionPlanner::terminate()
   return false;
 }
 
-PlannerResponse OMPLMotionPlanner::solve(const PlannerRequest& request) const
+void OMPLMotionPlanner::clear()
 {
-  PlannerResponse response;
-  if (!checkRequest(request))  // NOLINT
+
+}
+
+tesseract_common::StatusCode OMPLMotionPlanner::solve(const PlannerRequest& request,
+                                                      PlannerResponse& response,
+                                                      bool verbose) const
+{
+  auto status_category_ = std::make_shared<const OMPLMotionPlannerStatusCategory>(name_);
+
+  // Check the format of the request
+  if (!checkUserInput(request)) // NOLINT
   {
     response.successful = false;
     response.message = ERROR_INVALID_INPUT;
     return response;
-  }
-  std::vector<OMPLProblemConfig> problems;
-  if (request.data)
-  {
-    problems = *std::static_pointer_cast<std::vector<OMPLProblemConfig>>(request.data);
-  }
-  else
-  {
-    try
-    {
-      problems = createProblems(request);
-    }
-    catch (std::exception& e)
-    {
-      CONSOLE_BRIDGE_logError("OMPLPlanner failed to generate problem: %s.", e.what());
-      response.successful = false;
-      response.message = ERROR_INVALID_INPUT;
-      return response;
-    }
-
-    response.data = std::make_shared<std::vector<OMPLProblemConfig>>(problems);
   }
 
   // If the verbose set the log level to debug.
   if (request.verbose)
     console_bridge::setLogLevel(console_bridge::LogLevel::CONSOLE_BRIDGE_LOG_DEBUG);
 
-  /// @todo: Need to expand this to support multiple motion plans leveraging taskflow
-  for (auto& pc : problems)
+  // Get the planner profile
+  OMPLPlannerParameters params;
+  try
   {
-    auto& p = pc.problem;
-    auto parallel_plan = std::make_shared<ompl::tools::ParallelPlan>(p->simple_setup->getProblemDefinition());
+    const std::string profile_name =
+        getProfileString(name_, request.instructions.getProfile(), request.plan_profile_remapping);
+    auto pp = request.profiles->getProfile<PlannerProfile<OMPLPlannerParameters>>(name_, profile_name);
+    params = pp->create();
+  }
+  catch (const std::exception& ex)
+  {
+    response.status =
+        tesseract_common::StatusCode(OMPLMotionPlannerStatusCategory::ErrorInvalidInput, status_category_);
+    return response.status;
+  }
 
-    for (const auto& planner : p->planners)
-      parallel_plan->addPlanner(planner->create(p->simple_setup->getSpaceInformation()));
+  // Get the composite profile
+  ompl::geometric::SimpleSetupPtr simple_setup;
+  OMPLStateExtractor extractor;
+  try
+  {
+    const std::string profile_name =
+        getProfileString(name_, request.instructions.getProfile(), request.composite_profile_remapping);
+    auto cp = request.profiles->getProfile<CompositeProfile<OMPLCompositeProfileData>>(name_, profile_name);
+    std::tie(simple_setup, extractor) = cp->create(request.instructions, request.env);
+  }
+  catch (const std::exception& ex)
+  {
+    CONSOLE_BRIDGE_logError(ex.what());
+    response.status =
+        tesseract_common::StatusCode(OMPLMotionPlannerStatusCategory::ErrorInvalidInput, status_category_);
+    return response.status;
+  }
 
-    ompl::base::PlannerStatus status;
-    if (!p->optimize)
+  // Create an OMPL planner that can run multiple OMPL planners in parallele
+  auto parallel_plan = std::make_shared<ompl::tools::ParallelPlan>(simple_setup->getProblemDefinition());
+
+  // Add all the specified OMPL planners to the parallel planner
+  for (const auto& factory : params.planners)
+    parallel_plan->addPlanner(factory->create(simple_setup->getSpaceInformation()));
+
+  ompl::base::PlannerStatus status;
+  if (!params.optimize)
+  {
+    // Solve problem. Results are stored in the response
+    // Disabling hybridization because there is a bug which will return a trajectory that starts at the end state
+    // and finishes at the end state.
+    status = parallel_plan->solve(params.planning_time, 1, static_cast<unsigned>(params.max_solutions), false);
+  }
+  else
+  {
+    ompl::time::point end = ompl::time::now() + ompl::time::seconds(params.planning_time);
+    const ompl::base::ProblemDefinitionPtr& pdef = simple_setup->getProblemDefinition();
+    while (ompl::time::now() < end)
     {
       // Solve problem. Results are stored in the response
       // Disabling hybridization because there is a bug which will return a trajectory that starts at the end state
       // and finishes at the end state.
-      status = parallel_plan->solve(p->planning_time, 1, static_cast<unsigned>(p->max_solutions), false);
-    }
-    else
-    {
-      ompl::time::point end = ompl::time::now() + ompl::time::seconds(p->planning_time);
-      const ompl::base::ProblemDefinitionPtr& pdef = p->simple_setup->getProblemDefinition();
-      while (ompl::time::now() < end)
+      ompl::base::PlannerStatus localResult =
+          parallel_plan->solve(std::max(ompl::time::seconds(end - ompl::time::now()), 0.0),
+                               1,
+                               static_cast<unsigned>(params.max_solutions),
+                               false);
+      if (localResult)
       {
-        // Solve problem. Results are stored in the response
-        // Disabling hybridization because there is a bug which will return a trajectory that starts at the end state
-        // and finishes at the end state.
-        ompl::base::PlannerStatus localResult =
-            parallel_plan->solve(std::max(ompl::time::seconds(end - ompl::time::now()), 0.0),
-                                 1,
-                                 static_cast<unsigned>(p->max_solutions),
-                                 false);
-        if (localResult)
+        if (status != ompl::base::PlannerStatus::EXACT_SOLUTION)
+          status = localResult;
+
+        if (!pdef->hasOptimizationObjective())
         {
-          if (status != ompl::base::PlannerStatus::EXACT_SOLUTION)
-            status = localResult;
-
-          if (!pdef->hasOptimizationObjective())
-          {
-            CONSOLE_BRIDGE_logDebug("Terminating early since there is no optimization objective specified");
-            break;
-          }
-
-          ompl::base::Cost obj_cost = pdef->getSolutionPath()->cost(pdef->getOptimizationObjective());
-          CONSOLE_BRIDGE_logDebug("Motion Objective Cost: %f", obj_cost.value());
-
-          if (pdef->getOptimizationObjective()->isSatisfied(obj_cost))
-          {
-            CONSOLE_BRIDGE_logDebug("Terminating early since solution path satisfies the optimization objective");
-            break;
-          }
-
-          if (pdef->getSolutionCount() >= static_cast<std::size_t>(p->max_solutions))
-          {
-            CONSOLE_BRIDGE_logDebug("Terminating early since %u solutions were generated", p->max_solutions);
-            break;
-          }
-        }
-      }
-    }
-
-    if (status != ompl::base::PlannerStatus::EXACT_SOLUTION)
-    {
-      response.successful = false;
-      response.message = ERROR_FAILED_TO_FIND_VALID_SOLUTION;
-      return response;
-    }
-
-    if (p->simplify)
-    {
-      p->simple_setup->simplifySolution();
-    }
-    else
-    {
-      // Interpolate the path if it shouldn't be simplified and there are currently fewer states than requested
-      auto num_output_states = static_cast<unsigned>(p->n_output_states);
-      if (p->simple_setup->getSolutionPath().getStateCount() < num_output_states)
-      {
-        p->simple_setup->getSolutionPath().interpolate(num_output_states);
-      }
-      else
-      {
-        // Now try to simplify the trajectory to get it under the requested number of output states
-        // The interpolate function only executes if the current number of states is less than the requested
-        p->simple_setup->simplifySolution();
-        if (p->simple_setup->getSolutionPath().getStateCount() < num_output_states)
-          p->simple_setup->getSolutionPath().interpolate(num_output_states);
-      }
-    }
-  }
-
-  // Flatten the results to make them easier to process
-  /** @todo Current does not handle if the returned solution is greater than the request */
-  /** @todo Switch to processing the composite directly versus a flat list to solve the problem above  */
-  response.results = request.instructions;
-
-  std::size_t start_index{ 0 };
-  for (auto& pc : problems)
-  {
-    auto& p = pc.problem;
-    tesseract_common::TrajArray traj = p->getTrajectory();
-    assert(checkStartState(p->simple_setup->getProblemDefinition(), traj.row(0), p->extractor));
-    assert(checkGoalState(p->simple_setup->getProblemDefinition(), traj.bottomRows(1).transpose(), p->extractor));
-    assert(traj.rows() >= p->n_output_states);
-
-    const std::vector<std::string> joint_names = p->manip->getJointNames();
-    const Eigen::MatrixX2d joint_limits = p->manip->getLimits().joint_limits;
-
-    // Enforce limits
-    for (Eigen::Index i = 0; i < traj.rows(); i++)
-    {
-      assert(tesseract_common::satisfiesPositionLimits<double>(traj.row(i), joint_limits, 1e-4));
-      tesseract_common::enforcePositionLimits<double>(traj.row(i), joint_limits);
-    }
-
-    bool found{ false };
-    Eigen::Index row{ 0 };
-    auto& ci = response.results.getInstructions();
-    for (auto it = ci.begin() + static_cast<long>(start_index); it != ci.end(); ++it)
-    {
-      if (it->isMoveInstruction())
-      {
-        auto& mi = it->as<MoveInstructionPoly>();
-        if (mi.getUUID() == pc.start_uuid)
-          found = true;
-
-        if (mi.getUUID() == pc.end_uuid)
-        {
-          std::vector<InstructionPoly> extra;
-          for (; row < traj.rows() - 1; ++row)
-          {
-            MoveInstructionPoly child = mi.createChild();
-            if (request.format_result_as_input)
-            {
-              JointWaypointPoly jwp = mi.createJointWaypoint();
-              jwp.setIsConstrained(false);
-              jwp.setNames(joint_names);
-              jwp.setPosition(traj.row(row));
-              child.assignJointWaypoint(jwp);
-            }
-            else
-            {
-              StateWaypointPoly swp = mi.createStateWaypoint();
-              swp.setNames(joint_names);
-              swp.setPosition(traj.row(row));
-              child.assignStateWaypoint(swp);
-            }
-
-            extra.emplace_back(child);
-          }
-
-          assignSolution(mi, joint_names, traj.row(row), request.format_result_as_input);
-
-          if (!extra.empty())
-            ci.insert(it, extra.begin(), extra.end());
-
-          start_index += extra.size();
+          CONSOLE_BRIDGE_logDebug("Terminating early since there is no optimization objective specified");
           break;
         }
 
-        if (found)
-          assignSolution(mi, joint_names, traj.row(row++), request.format_result_as_input);
+        ompl::base::Cost obj_cost = pdef->getSolutionPath()->cost(pdef->getOptimizationObjective());
+        CONSOLE_BRIDGE_logDebug("Motion Objective Cost: %f", obj_cost.value());
+
+        if (pdef->getOptimizationObjective()->isSatisfied(obj_cost))
+        {
+          CONSOLE_BRIDGE_logDebug("Terminating early since solution path satisfies the optimization objective");
+          break;
+        }
+
+        if (pdef->getSolutionCount() >= static_cast<std::size_t>(params.max_solutions))
+        {
+          CONSOLE_BRIDGE_logDebug("Terminating early since %u solutions were generated", params.max_solutions);
+          break;
+        }
       }
-
-      ++start_index;
     }
-
-    //    bool found {false};
-    //    Eigen::Index row{0};
-    //    for (std::size_t i = start_index; i < results_flattened.size(); ++i)
-    //    {
-    //      auto& mi = results_flattened[i].get().as<MoveInstructionPoly>();
-    //      if (mi.getUUID() == pc.start_uuid)
-    //        found = true;
-
-    //      if (found)
-    //      {
-    //        if (mi.getWaypoint().isCartesianWaypoint())
-    //          mi.getWaypoint().as<CartesianWaypointPoly>().setSeed(tesseract_common::JointState(joint_names,
-    //          traj.row(row++)));
-    //        else if (mi.getWaypoint().isJointWaypoint())
-    //          mi.getWaypoint().as<JointWaypointPoly>().setPosition(traj.row(row++));
-    //        else if (mi.getWaypoint().isStateWaypoint())
-    //          mi.getWaypoint().as<StateWaypointPoly>().setPosition(traj.row(row++));
-    //        else
-    //          throw std::runtime_error("OMPLMotionPlannerDefaultConfig: unknown waypoint type");
-    //      }
-
-    //      if (mi.getUUID() == pc.end_uuid)
-    //      {
-    //        start_index = i;
-    //        break;
-    //      }
-    //    }
   }
 
-  response.successful = true;
-  response.message = SOLUTION_FOUND;
-  return response;
-}
+  if (status != ompl::base::PlannerStatus::EXACT_SOLUTION)
+  {
+    response.status = tesseract_common::StatusCode(OMPLMotionPlannerStatusCategory::ErrorFailedToFindValidSolution,
+                                                   status_category_);
+    return response.status;
+  }
 
-void OMPLMotionPlanner::clear() { parallel_plan_ = nullptr; }
+  // The trajectory must have at least as many states as the seed trajectory
+  const std::size_t n_states = simple_setup->getSolutionPath().getStateCount();
+  if (n_states < request.seed.size())
+  {
+    // Upsample the number of states to match the length of the seed
+    simple_setup->getSolutionPath().interpolate(static_cast<unsigned>(request.seed.size()));
+  }
+  else if (n_states > request.seed.size() && params.simplify)
+  {
+    // Simplify the solution
+    simple_setup->simplifySolution();
+
+    // Upsample the number of states to match the length of the seed if required
+    if (simple_setup->getSolutionPath().getStateCount() < request.seed.size())
+      simple_setup->getSolutionPath().interpolate(static_cast<unsigned>(request.seed.size()));
+  }
+  else
+  {
+    // Trajectory length matches seed length, so no need to simplify or interpolate
+  }
+
+  // Get the results
+  tesseract_common::TrajArray trajectory = toTrajArray(simple_setup->getSolutionPath(), extractor);
+  assert(checkStartState(simple_setup->getProblemDefinition(), trajectory.row(0), extractor));
+  assert(checkGoalState(simple_setup->getProblemDefinition(), trajectory.bottomRows(1).transpose(), extractor));
+
+  // Enforce limits
+  {
+    const std::string manipulator = request.instructions.getManipulatorInfo().manipulator;
+    auto joint_limits = request.env->getJointGroup(manipulator)->getLimits().joint_limits;
+    for (Eigen::Index i = 0; i < trajectory.rows(); i++)
+      tesseract_common::enforcePositionLimits(trajectory.row(i), joint_limits);
+  }
+
+  // Initialize the output by copying the input program and flattening it
+  response.results = request.seed;
+  std::vector<std::reference_wrapper<Instruction>> results_flattened =
+      flattenProgramToPattern(response.results, request.instructions);
+
+  // Element 0 of the flattened results is a start instruction that should contain the first trajectory state
+  auto& start_instruction = results_flattened.at(0).get().as<MoveInstruction>();
+
+  // Element 1 of the flattened results is a composite instruction containing the reset of the trajectory
+  auto& composite = results_flattened.at(1).get().as<CompositeInstruction>();
+
+  // The results composite will only have as many states as the seed, but the OMPL trajectory might require more states
+  // In this case, we need to insert more states into the composite to cover the difference
+  if (composite.size() < trajectory.rows())
+  {
+    const std::size_t diff = static_cast<std::size_t>(trajectory.rows()) - composite.size();
+    composite.insert(composite.end(), diff, composite.back());
+  }
+
+  // Overwrite the contents of each copied waypoint
+  for (Eigen::Index i = 0; i < trajectory.rows(); ++i)
+  {
+    // The first trajectory state goes into the start instruction
+    if (i == 0)
+    {
+      start_instruction.getWaypoint().as<StateWaypoint>().position = trajectory.row(i);
+    }
+    else
+    {
+      // Subsequent trajectory states go into the composite instruction
+      auto& move_instruction = composite.at(static_cast<std::size_t>(i)).as<MoveInstruction>();
+      move_instruction.getWaypoint().as<StateWaypoint>().position = trajectory.row(i);
+    }
+  }
+
+  response.status = tesseract_common::StatusCode(OMPLMotionPlannerStatusCategory::SolutionFound, status_category_);
+  return response.status;
+}
 
 MotionPlanner::Ptr OMPLMotionPlanner::clone() const { return std::make_shared<OMPLMotionPlanner>(name_); }
 
-OMPLProblemConfig OMPLMotionPlanner::createSubProblem(const PlannerRequest& request,
-                                                      const tesseract_common::ManipulatorInfo& composite_mi,
-                                                      const tesseract_kinematics::JointGroup::ConstPtr& manip,
-                                                      const MoveInstructionPoly& start_instruction,
-                                                      const MoveInstructionPoly& end_instruction,
-                                                      int n_output_states,
-                                                      int index) const
+bool OMPLMotionPlanner::checkUserInput(const PlannerRequest& request)
 {
-  std::vector<std::string> joint_names = manip->getJointNames();
-  std::vector<std::string> active_link_names = manip->getActiveLinkNames();
+  // Check that parameters are valid
+  if (request.env == nullptr)
+    std::runtime_error("Environment is invalid (nullptr)");
 
-  // Get Plan Profile
-  auto cur_plan_profile = request.profiles->getProfile<OMPLPlanProfile>(name_, end_instruction.getProfile(name_));
+  if (request.instructions.empty())
+    std::runtime_error("Request contains no instructions");
 
-  /** @todo Should check that the joint names match the order of the manipulator */
-  OMPLProblemConfig config;
-  config.start_uuid = start_instruction.getUUID();
-  config.end_uuid = end_instruction.getUUID();
-  config.problem = std::make_shared<OMPLProblem>();
-  config.problem->env = request.env;
-  config.problem->env_state = request.env_state;
-  config.problem->manip = manip;
-  config.problem->contact_checker = request.env->getDiscreteContactManager();
-  config.problem->contact_checker->setCollisionObjectsTransform(request.env_state.link_transforms);
-  config.problem->contact_checker->setActiveCollisionObjects(active_link_names);
+  if (request.instructions.size() > 1)
+    std::runtime_error("OMPL planner only supports one plan instruction");
 
-  cur_plan_profile->setup(*config.problem);
-  config.problem->n_output_states = n_output_states;
+  // Attempt to cast the first child instruction to a PlanInstruction
+  request.instructions.at(0).as<PlanInstruction>();
 
-  if (end_instruction.getWaypoint().isJointWaypoint() || end_instruction.getWaypoint().isStateWaypoint())
-  {
-    assert(checkJointPositionFormat(joint_names, end_instruction.getWaypoint()));
-    const Eigen::VectorXd& cur_position = getJointPosition(end_instruction.getWaypoint());
-    cur_plan_profile->applyGoalStates(
-        *config.problem, cur_position, end_instruction, composite_mi, active_link_names, index);
-
-    if (start_instruction.getWaypoint().isJointWaypoint() || start_instruction.getWaypoint().isStateWaypoint())
-    {
-      assert(checkJointPositionFormat(joint_names, start_instruction.getWaypoint()));
-      const Eigen::VectorXd& prev_position = getJointPosition(start_instruction.getWaypoint());
-      cur_plan_profile->applyStartStates(
-          *config.problem, prev_position, start_instruction, composite_mi, active_link_names, index);
-    }
-    else if (start_instruction.getWaypoint().isCartesianWaypoint())
-    {
-      const auto& prev_wp = start_instruction.getWaypoint().as<CartesianWaypointPoly>();
-      cur_plan_profile->applyStartStates(
-          *config.problem, prev_wp.getTransform(), start_instruction, composite_mi, active_link_names, index);
-    }
-    else
-    {
-      throw std::runtime_error("OMPLMotionPlanner: unknown waypoint type");
-    }
-
-    return config;
-  }
-
-  if (end_instruction.getWaypoint().isCartesianWaypoint())
-  {
-    const auto& cur_wp = end_instruction.getWaypoint().as<CartesianWaypointPoly>();
-    cur_plan_profile->applyGoalStates(
-        *config.problem, cur_wp.getTransform(), end_instruction, composite_mi, active_link_names, index);
-
-    if (index == 0)
-    {
-      if (start_instruction.getWaypoint().isJointWaypoint() || start_instruction.getWaypoint().isStateWaypoint())
-      {
-        assert(checkJointPositionFormat(joint_names, start_instruction.getWaypoint()));
-        const Eigen::VectorXd& prev_position = getJointPosition(start_instruction.getWaypoint());
-        cur_plan_profile->applyStartStates(
-            *config.problem, prev_position, start_instruction, composite_mi, active_link_names, index);
-      }
-      else if (start_instruction.getWaypoint().isCartesianWaypoint())
-      {
-        const auto& prev_wp = start_instruction.getWaypoint().as<CartesianWaypointPoly>();
-        cur_plan_profile->applyStartStates(
-            *config.problem, prev_wp.getTransform(), start_instruction, composite_mi, active_link_names, index);
-      }
-      else
-      {
-        throw std::runtime_error("OMPLMotionPlanner: unknown waypoint type");
-      }
-    }
-    else
-    {
-      /** @todo Update. Extract the solution for the previous plan and set as the start */
-      assert(false);
-    }
-
-    return config;
-  }
-
-  throw std::runtime_error("OMPLMotionPlanner: unknown waypoint type");
-}
-std::vector<OMPLProblemConfig> OMPLMotionPlanner::createProblems(const PlannerRequest& request) const
-{
-  std::vector<OMPLProblemConfig> problems;
-
-  // Assume all the plan instructions have the same manipulator as the composite
-  assert(!request.instructions.getManipulatorInfo().empty());
-
-  const tesseract_common::ManipulatorInfo& composite_mi = request.instructions.getManipulatorInfo();
-
-  tesseract_kinematics::JointGroup::Ptr manip;
-  if (composite_mi.manipulator.empty())
-    throw std::runtime_error("OMPL, manipulator is empty!");
-
-  try
-  {
-    tesseract_kinematics::KinematicGroup::Ptr kin_group;
-    std::string error_msg;
-    if (composite_mi.manipulator_ik_solver.empty())
-    {
-      kin_group = request.env->getKinematicGroup(composite_mi.manipulator);
-      error_msg = "Failed to find kinematic group for manipulator '" + composite_mi.manipulator + "'";
-    }
-    else
-    {
-      kin_group = request.env->getKinematicGroup(composite_mi.manipulator, composite_mi.manipulator_ik_solver);
-      error_msg = "Failed to find kinematic group for manipulator '" + composite_mi.manipulator + "' with solver '" +
-                  composite_mi.manipulator_ik_solver + "'";
-    }
-
-    if (kin_group == nullptr)
-    {
-      CONSOLE_BRIDGE_logError("%s", error_msg.c_str());
-      throw std::runtime_error(error_msg);
-    }
-
-    manip = kin_group;
-  }
-  catch (...)
-  {
-    manip = request.env->getJointGroup(composite_mi.manipulator);
-  }
-
-  if (!manip)
-    throw std::runtime_error("Failed to get joint/kinematic group: " + composite_mi.manipulator);
-
-  // Flatten the input for planning
-  auto move_instructions = request.instructions.flatten(&moveFilter);
-
-  // Transform plan instructions into ompl problem
-  int index = 0;
-  int num_output_states = 1;
-  MoveInstructionPoly start_instruction = move_instructions.front().get().as<MoveInstructionPoly>();
-
-  for (std::size_t i = 1; i < move_instructions.size(); ++i)
-  {
-    ++num_output_states;
-    const auto& instruction = move_instructions[i].get();
-    assert(instruction.isMoveInstruction());
-    const auto& move_instruction = instruction.as<MoveInstructionPoly>();
-    const auto& waypoint = move_instruction.getWaypoint();
-    if (waypoint.isCartesianWaypoint() || waypoint.isStateWaypoint() ||
-        (waypoint.isJointWaypoint() && waypoint.as<JointWaypointPoly>().isConstrained()))
-    {
-      problems.push_back(createSubProblem(
-          request, composite_mi, manip, start_instruction, move_instruction, num_output_states, index++));
-      start_instruction = move_instruction;
-      num_output_states = 1;
-    }
-  }
-
-  return problems;
+  return true;
 }
 
 }  // namespace tesseract_planning
