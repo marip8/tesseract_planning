@@ -39,6 +39,7 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 #include <tesseract_motion_planners/ompl/ompl_motion_planner.h>
 #include <tesseract_motion_planners/ompl/ompl_planner_configurator.h>
 #include <tesseract_motion_planners/ompl/profile/ompl_composite_profile_rvss.h>
+#include <tesseract_motion_planners/ompl/profile/ompl_waypoint_profile.h>
 
 #include <tesseract_motion_planners/core/types.h>
 #include <tesseract_motion_planners/core/utils.h>
@@ -178,10 +179,10 @@ TYPED_TEST(OMPLTestFixture, JointStartJointGoal)  // NOLINT
       Eigen::Map<const Eigen::VectorXd>(this->end_state_.data(), static_cast<long>(this->end_state_.size())));
 
   // Define Start Instruction
-  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_);
+  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_, this->manip);
 
   // Define Plan Instructions
-  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_);
+  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
 
   // Create a program
   CompositeInstruction program;
@@ -204,6 +205,8 @@ TYPED_TEST(OMPLTestFixture, JointStartJointGoal)  // NOLINT
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createPlannerProfile());
     d->addProfile<CompositeProfile<OMPLCompositeProfileData>>(
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createCompositeProfile());
+    d->addProfile<WaypointProfile<std::vector<Eigen::VectorXd>>>(
+        OMPL_DEFAULT_NAMESPACE, this->profile_name_, std::make_shared<OMPLWaypointProfile>());
     request.profiles = std::move(d);
   }
 
@@ -240,13 +243,13 @@ TYPED_TEST(OMPLTestFixture, StartStateInCollision)
   const std::vector<double> swp = { 0, 0.7, 0.0, 0, 0.0, 0, 0.0 };
   const JointWaypoint wp1(joint_group->getJointNames(),
                           Eigen::Map<const Eigen::VectorXd>(swp.data(), static_cast<long>(swp.size())));
-  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_);
+  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_, this->manip);
 
   // Specify a end waypoint
   const JointWaypoint wp2(
       joint_group->getJointNames(),
       Eigen::Map<const Eigen::VectorXd>(this->end_state_.data(), static_cast<long>(this->end_state_.size())));
-  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_);
+  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
 
   // Create a new program
   CompositeInstruction program;
@@ -269,6 +272,8 @@ TYPED_TEST(OMPLTestFixture, StartStateInCollision)
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createPlannerProfile());
     d->addProfile<CompositeProfile<OMPLCompositeProfileData>>(
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createCompositeProfile());
+    d->addProfile<WaypointProfile<std::vector<Eigen::VectorXd>>>(
+        OMPL_DEFAULT_NAMESPACE, this->profile_name_, std::make_shared<OMPLWaypointProfile>());
     request.profiles = std::move(d);
   }
 
@@ -287,13 +292,13 @@ TYPED_TEST(OMPLTestFixture, EndStateInCollision)
   const JointWaypoint wp1(
       joint_group->getJointNames(),
       Eigen::Map<const Eigen::VectorXd>(this->start_state_.data(), static_cast<long>(this->start_state_.size())));
-  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_);
+  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_, this->manip);
 
   // Check for end state in collision error
   const std::vector<double> ewp = { 0, 0.7, 0.0, 0, 0.0, 0, 0.0 };
   const JointWaypoint wp2(joint_group->getJointNames(),
                           Eigen::Map<const Eigen::VectorXd>(ewp.data(), static_cast<long>(ewp.size())));
-  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_);
+  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
 
   // Create a new program
   CompositeInstruction program;
@@ -315,6 +320,8 @@ TYPED_TEST(OMPLTestFixture, EndStateInCollision)
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createPlannerProfile());
     d->addProfile<CompositeProfile<OMPLCompositeProfileData>>(
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createCompositeProfile());
+    d->addProfile<WaypointProfile<std::vector<Eigen::VectorXd>>>(
+        OMPL_DEFAULT_NAMESPACE, this->profile_name_, std::make_shared<OMPLWaypointProfile>());
     request.profiles = std::move(d);
   }
 
@@ -341,10 +348,10 @@ TYPED_TEST(OMPLTestFixture, JointStartCartesianGoal)
   const CartesianWaypoint wp2 = goal;
 
   // Define Start Instruction
-  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_);
+  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_, this->manip);
 
   // Define Plan Instructions
-  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_);
+  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
 
   // Create a program
   CompositeInstruction program;
@@ -367,6 +374,8 @@ TYPED_TEST(OMPLTestFixture, JointStartCartesianGoal)
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createPlannerProfile());
     d->addProfile<CompositeProfile<OMPLCompositeProfileData>>(
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createCompositeProfile());
+    d->addProfile<WaypointProfile<std::vector<Eigen::VectorXd>>>(
+        OMPL_DEFAULT_NAMESPACE, this->profile_name_, std::make_shared<OMPLWaypointProfile>());
     request.profiles = std::move(d);
   }
 
@@ -405,10 +414,10 @@ TYPED_TEST(OMPLTestFixture, CartesianStartJointGoal)
       Eigen::Map<const Eigen::VectorXd>(this->end_state_.data(), static_cast<long>(this->end_state_.size())));
 
   // Define Start Instruction
-  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_);
+  const PlanInstruction start_instruction(wp1, PlanInstructionType::START, this->profile_name_, this->manip);
 
   // Define Plan Instructions
-  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_);
+  const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
 
   // Create a program
   CompositeInstruction program;
@@ -431,6 +440,8 @@ TYPED_TEST(OMPLTestFixture, CartesianStartJointGoal)
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createPlannerProfile());
     d->addProfile<CompositeProfile<OMPLCompositeProfileData>>(
         OMPL_DEFAULT_NAMESPACE, this->profile_name_, this->createCompositeProfile());
+    d->addProfile<WaypointProfile<std::vector<Eigen::VectorXd>>>(
+        OMPL_DEFAULT_NAMESPACE, this->profile_name_, std::make_shared<OMPLWaypointProfile>());
     request.profiles = std::move(d);
   }
 
