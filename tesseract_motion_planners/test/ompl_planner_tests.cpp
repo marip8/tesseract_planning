@@ -121,7 +121,7 @@ public:
   std::shared_ptr<OMPLPlannerProfile> createPlannerProfile()
   {
     auto planner_profile = std::make_shared<OMPLPlannerProfile>();
-    planner_profile->params.planning_time = 10.0;
+    planner_profile->params.planning_time = 5.0;
     planner_profile->params.optimize = false;
     planner_profile->params.max_solutions = 2;
     planner_profile->params.simplify = false;
@@ -183,6 +183,7 @@ TYPED_TEST(OMPLTestFixture, JointStartJointGoal)  // NOLINT
 
   // Define Plan Instructions
   const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
+  const PlanInstruction plan_f2(wp1, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
 
   // Create a program
   CompositeInstruction program;
@@ -190,6 +191,7 @@ TYPED_TEST(OMPLTestFixture, JointStartJointGoal)  // NOLINT
   program.setStartInstruction(start_instruction);
   program.setManipulatorInfo(this->manip);
   program.push_back(plan_f1);
+  program.push_back(plan_f2);
 
   // Create Planner Request
   PlannerRequest request;
@@ -222,8 +224,8 @@ TYPED_TEST(OMPLTestFixture, JointStartJointGoal)  // NOLINT
 
   ASSERT_TRUE(&status);
   EXPECT_TRUE(planner_response.results.hasStartInstruction());
-  EXPECT_GE(getMoveInstructionCount(planner_response.results), this->seed_steps_);
-  EXPECT_EQ(planner_response.results.size(), 1);
+  EXPECT_GE(getMoveInstructionCount(planner_response.results), 2 * this->seed_steps_ + 1);
+  EXPECT_EQ(planner_response.results.size(), 2);
   EXPECT_TRUE(wp1.isApprox(getJointPosition(getFirstMoveInstruction(planner_response.results)->getWaypoint()), 1e-5));
   EXPECT_TRUE(wp2.isApprox(
       getJointPosition(
@@ -343,6 +345,7 @@ TYPED_TEST(OMPLTestFixture, JointStartCartesianGoal)
 
   // Define Plan Instructions
   const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
+  const PlanInstruction plan_f2(wp1, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
 
   // Create a program
   CompositeInstruction program;
@@ -350,6 +353,7 @@ TYPED_TEST(OMPLTestFixture, JointStartCartesianGoal)
   program.setStartInstruction(start_instruction);
   program.setManipulatorInfo(this->manip);
   program.push_back(plan_f1);
+  program.push_back(plan_f2);
 
   // Create Planner Request
   PlannerRequest request;
@@ -376,12 +380,14 @@ TYPED_TEST(OMPLTestFixture, JointStartCartesianGoal)
   }
   ASSERT_TRUE(&status);
   ASSERT_TRUE(planner_response.results.hasStartInstruction());
-  EXPECT_GE(getMoveInstructionCount(planner_response.results), this->seed_steps_);
+  EXPECT_GE(getMoveInstructionCount(planner_response.results), 2 * this->seed_steps_ + 1);
   EXPECT_TRUE(wp1.isApprox(getJointPosition(getFirstMoveInstruction(planner_response.results)->getWaypoint()), 1e-5));
+  EXPECT_TRUE(wp1.isApprox(getJointPosition(getLastMoveInstruction(planner_response.results)->getWaypoint()), 1e-5));
 
-  const MoveInstruction* last_move = getLastMoveInstruction(planner_response.results);
-  const Eigen::VectorXd& last_move_joints = getJointPosition(last_move->getWaypoint());
-  const Eigen::Isometry3d check_goal = kin_group->calcFwdKin(last_move_joints).at(this->manip.tcp_frame);
+  const MoveInstruction* cart_move =
+      getLastMoveInstruction(planner_response.results.front().as<CompositeInstruction>());
+  const Eigen::VectorXd& cart_move_joints = getJointPosition(cart_move->getWaypoint());
+  const Eigen::Isometry3d check_goal = kin_group->calcFwdKin(cart_move_joints).at(this->manip.tcp_frame);
   EXPECT_TRUE(wp2.isApprox(check_goal, 1e-3));
 }
 
@@ -406,6 +412,7 @@ TYPED_TEST(OMPLTestFixture, CartesianStartJointGoal)
 
   // Define Plan Instructions
   const PlanInstruction plan_f1(wp2, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
+  const PlanInstruction plan_f2(wp1, PlanInstructionType::FREESPACE, this->profile_name_, this->manip);
 
   // Create a program
   CompositeInstruction program;
@@ -413,6 +420,7 @@ TYPED_TEST(OMPLTestFixture, CartesianStartJointGoal)
   program.setStartInstruction(start_instruction);
   program.setManipulatorInfo(this->manip);
   program.push_back(plan_f1);
+  program.push_back(plan_f2);
 
   // Create Planner Request
   PlannerRequest request;
@@ -440,15 +448,20 @@ TYPED_TEST(OMPLTestFixture, CartesianStartJointGoal)
 
   ASSERT_TRUE(&status);
   ASSERT_TRUE(planner_response.results.hasStartInstruction());
-  EXPECT_GE(getMoveInstructionCount(planner_response.results), this->seed_steps_);
+  EXPECT_GE(getMoveInstructionCount(planner_response.results), 2 * this->seed_steps_ + 1);
 
-  const MoveInstruction* last_mi = getLastMoveInstruction(planner_response.results);
+  // Check the start/end Cartesian coordinate against the target waypoint
+  auto check_cartesian_pose = [&](const MoveInstruction* mi) {
+    const Eigen::VectorXd& joints = getJointPosition(mi->getWaypoint());
+    const Eigen::Isometry3d pose = kin_group->calcFwdKin(joints).at(this->manip.tcp_frame);
+    EXPECT_TRUE(wp1.isApprox(pose, 1e-3));
+  };
+  check_cartesian_pose(getFirstMoveInstruction(planner_response.results));
+  check_cartesian_pose(getLastMoveInstruction(planner_response.results));
+
+  // Check the joint move
+  const MoveInstruction* last_mi = getLastMoveInstruction(planner_response.results.front().as<CompositeInstruction>());
   EXPECT_TRUE(wp2.isApprox(getJointPosition(last_mi->getWaypoint()), 1e-5));
-
-  const MoveInstruction* first_mi = getFirstMoveInstruction(planner_response.results);
-  const Eigen::VectorXd& joints = getJointPosition(first_mi->getWaypoint());
-  const Eigen::Isometry3d check_start = kin_group->calcFwdKin(joints).at(this->manip.tcp_frame);
-  EXPECT_TRUE(wp1.isApprox(check_start, 1e-3));
 }
 
 // TEST(OMPLMultiPlanner, OMPLMultiPlannerUnit)  // NOLINT
