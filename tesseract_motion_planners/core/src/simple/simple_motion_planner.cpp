@@ -158,7 +158,7 @@ PlanInstruction SimpleMotionPlanner::getStartInstruction(const PlannerRequest& r
 {
   // Create start instruction
   Waypoint start_waypoint{ NullWaypoint() };
-  PlanInstruction start_instruction_seed(start_waypoint, PlanInstructionType::START);
+  PlanInstruction start_instruction_seed(start_waypoint, PlanInstructionType::START, request.instructions.getProfile());
 
   if (request.instructions.hasStartInstruction())
   {

@@ -360,7 +360,7 @@ std::shared_ptr<TrajOptIfoptProblem> TrajOptIfoptMotionPlanner::createProblem(co
     Eigen::VectorXd current_jv = request.env_state.getJointValues(joint_names);
     StateWaypoint swp(joint_names, current_jv);
 
-    MoveInstruction temp_move(swp, MoveInstructionType::START);
+    MoveInstruction temp_move(swp, MoveInstructionType::START, profile);
     placeholder_instruction = temp_move;
     start_instruction = &placeholder_instruction;
     start_waypoint = swp;

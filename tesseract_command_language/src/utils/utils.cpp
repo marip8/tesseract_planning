@@ -314,9 +314,9 @@ void generateSkeletonSeedHelper(CompositeInstruction& composite_instructions)
     }
     else if (isPlanInstruction(i))
     {
-      CompositeInstruction ci;
       const auto& pi = i.as<PlanInstruction>();
-      ci.setProfile(pi.getProfile());
+
+      CompositeInstruction ci(pi.getProfile());
       ci.setDescription(pi.getDescription());
       ci.setManipulatorInfo(pi.getManipulatorInfo());
       ci.profile_overrides = pi.profile_overrides;

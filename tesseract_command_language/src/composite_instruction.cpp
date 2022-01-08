@@ -50,10 +50,7 @@ const std::string& CompositeInstruction::getDescription() const { return descrip
 
 void CompositeInstruction::setDescription(const std::string& description) { description_ = description; }
 
-void CompositeInstruction::setProfile(const std::string& profile)
-{
-  profile_ = (profile.empty()) ? DEFAULT_PROFILE_KEY : profile;
-}
+void CompositeInstruction::setProfile(const std::string& profile) { profile_ = profile; }
 const std::string& CompositeInstruction::getProfile() const { return profile_; }
 
 void CompositeInstruction::setManipulatorInfo(ManipulatorInfo info) { manipulator_info_ = std::move(info); }
@@ -209,6 +206,45 @@ void CompositeInstruction::serialize(Archive& ar, const unsigned int /*version*/
 }
 
 }  // namespace tesseract_planning
+
+
+
+namespace boost
+{
+namespace serialization
+{
+template <class Archive>
+inline void save_construct_data(Archive& ar,
+                                const tesseract_planning::CompositeInstruction* t,
+                                const unsigned long int /*file_version*/)
+{
+  // save data required to construct instance
+  ar << t->profile_;
+  ar << t->order_;
+  ar << t->start_instruction_;
+}
+
+template <class Archive>
+inline void load_construct_data(Archive& ar,
+                                tesseract_planning::CompositeInstruction* t,
+                                const unsigned long int /*file_version*/)
+{
+  // retrieve data from archive required to construct new instance
+  std::string profile;
+  tesseract_planning::CompositeInstructionOrder order;
+  tesseract_planning::ManipulatorInfo manipulator_info;
+  ar >> profile;
+  ar >> order;
+  ar >> manipulator_info;
+  // invoke inplace constructor to initialize instance of my_class
+  ::new(t)tesseract_planning::CompositeInstruction(profile, order, manipulator_info);
+}
+
+}  // namespace serialization
+}  // namespace boost
+
+
+
 
 #include <boost/archive/xml_oarchive.hpp>
 #include <boost/archive/xml_iarchive.hpp>

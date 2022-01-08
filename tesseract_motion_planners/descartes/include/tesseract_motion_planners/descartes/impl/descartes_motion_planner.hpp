@@ -318,7 +318,7 @@ DescartesMotionPlanner<FloatType>::createProblem(const PlannerRequest& request) 
     Eigen::VectorXd current_jv = request.env_state.getJointValues(joint_names);
     StateWaypoint swp(joint_names, current_jv);
 
-    MoveInstruction temp_move(swp, MoveInstructionType::START);
+    MoveInstruction temp_move(swp, MoveInstructionType::START, request.instructions.getProfile());
     placeholder_instruction = temp_move;
     start_instruction = &placeholder_instruction;
     start_waypoint = swp;

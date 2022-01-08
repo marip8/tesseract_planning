@@ -154,10 +154,9 @@ CompositeInstruction getInterpolatedComposite(const std::vector<std::string>& jo
                                               const Eigen::MatrixXd& states,
                                               const PlanInstruction& base_instruction)
 {
-  CompositeInstruction composite;
+  CompositeInstruction composite(base_instruction.getProfile());
   composite.setManipulatorInfo(base_instruction.getManipulatorInfo());
   composite.setDescription(base_instruction.getDescription());
-  composite.setProfile(base_instruction.getProfile());
   composite.profile_overrides = base_instruction.profile_overrides;
 
   // Get move type base on base instruction type
@@ -166,7 +165,7 @@ CompositeInstruction getInterpolatedComposite(const std::vector<std::string>& jo
   // Convert to MoveInstructions
   for (long i = 1; i < states.cols(); ++i)
   {
-    MoveInstruction move_instruction(StateWaypoint(joint_names, states.col(i)), move_type);
+    MoveInstruction move_instruction(StateWaypoint(joint_names, states.col(i)), move_type, base_instruction.getProfile());
     move_instruction.setManipulatorInfo(base_instruction.getManipulatorInfo());
     move_instruction.setDescription(base_instruction.getDescription());
     move_instruction.setProfile(base_instruction.getProfile());

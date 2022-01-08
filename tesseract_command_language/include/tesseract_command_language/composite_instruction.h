@@ -34,7 +34,6 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 
 #include <tesseract_command_language/core/instruction.h>
 #include <tesseract_command_language/null_instruction.h>
-#include <tesseract_command_language/constants.h>
 #include <tesseract_command_language/instruction_type.h>
 #include <tesseract_command_language/profile_dictionary.h>
 #include <tesseract_command_language/types.h>
@@ -51,7 +50,8 @@ enum class CompositeInstructionOrder
 class CompositeInstruction
 {
 public:
-  CompositeInstruction(std::string profile = DEFAULT_PROFILE_KEY,
+  CompositeInstruction() = default;  // Required for boost serialization do not use
+  CompositeInstruction(std::string profile,
                        CompositeInstructionOrder order = CompositeInstructionOrder::ORDERED,
                        ManipulatorInfo manipulator_info = ManipulatorInfo());
 
@@ -261,7 +261,7 @@ private:
    *
    * If it has a child composite instruction it uses the child composites profile for that section
    */
-  std::string profile_{ DEFAULT_PROFILE_KEY };
+  std::string profile_;
 
   /** @brief The order of the composite instruction */
   CompositeInstructionOrder order_{ CompositeInstructionOrder::ORDERED };
@@ -274,6 +274,7 @@ private:
    */
   value_type start_instruction_{ NullInstruction() };
 
+  // Required for boost serialization
   friend class boost::serialization::access;
   template <class Archive>
   void serialize(Archive& ar, const unsigned int version);  // NOLINT

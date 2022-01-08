@@ -603,8 +603,7 @@ void generateNaiveSeedHelper(CompositeInstruction& composite_instructions,
       auto& base_instruction = i.as<PlanInstruction>();
       ManipulatorInfo mi = manip_info.getCombined(base_instruction.getManipulatorInfo());
 
-      CompositeInstruction ci;
-      ci.setProfile(base_instruction.getProfile());
+      CompositeInstruction ci(base_instruction.getProfile());
       ci.setDescription(base_instruction.getDescription());
       ci.setManipulatorInfo(base_instruction.getManipulatorInfo());
       ci.profile_overrides = base_instruction.profile_overrides;
@@ -634,7 +633,7 @@ void generateNaiveSeedHelper(CompositeInstruction& composite_instructions,
       if (isStateWaypoint(base_instruction.getWaypoint()))
       {
         assert(checkJointPositionFormat(group_joint_names, base_instruction.getWaypoint()));
-        MoveInstruction move_instruction(base_instruction.getWaypoint(), move_type);
+        MoveInstruction move_instruction(base_instruction.getWaypoint(), move_type, ci.getProfile());
         move_instruction.setManipulatorInfo(base_instruction.getManipulatorInfo());
         move_instruction.setDescription(base_instruction.getDescription());
         move_instruction.setProfile(base_instruction.getProfile());
@@ -645,7 +644,7 @@ void generateNaiveSeedHelper(CompositeInstruction& composite_instructions,
       {
         assert(checkJointPositionFormat(group_joint_names, base_instruction.getWaypoint()));
         const auto& jwp = base_instruction.getWaypoint().as<JointWaypoint>();
-        MoveInstruction move_instruction(StateWaypoint(jwp.joint_names, jwp.waypoint), move_type);
+        MoveInstruction move_instruction(StateWaypoint(jwp.joint_names, jwp.waypoint), move_type, ci.getProfile());
         move_instruction.setManipulatorInfo(base_instruction.getManipulatorInfo());
         move_instruction.setDescription(base_instruction.getDescription());
         move_instruction.setProfile(base_instruction.getProfile());
@@ -654,7 +653,7 @@ void generateNaiveSeedHelper(CompositeInstruction& composite_instructions,
       }
       else
       {
-        MoveInstruction move_instruction(StateWaypoint(group_joint_names, jv), move_type);
+        MoveInstruction move_instruction(StateWaypoint(group_joint_names, jv), move_type, ci.getProfile());
         move_instruction.setManipulatorInfo(base_instruction.getManipulatorInfo());
         move_instruction.setDescription(base_instruction.getDescription());
         move_instruction.setProfile(base_instruction.getProfile());
@@ -712,7 +711,7 @@ CompositeInstruction generateNaiveSeed(const CompositeInstruction& composite_ins
   if (isStateWaypoint(wp))
   {
     assert(checkJointPositionFormat(joint_names, wp));
-    MoveInstruction move_instruction(wp, MoveInstructionType::START);
+    MoveInstruction move_instruction(wp, MoveInstructionType::START, seed.getProfile());
     move_instruction.setManipulatorInfo(base_mi);
     move_instruction.setDescription(description);
     move_instruction.setProfile(profile);
@@ -723,7 +722,7 @@ CompositeInstruction generateNaiveSeed(const CompositeInstruction& composite_ins
   {
     assert(checkJointPositionFormat(joint_names, wp));
     const auto& jwp = wp.as<JointWaypoint>();
-    MoveInstruction move_instruction(StateWaypoint(jwp.joint_names, jwp.waypoint), MoveInstructionType::START);
+    MoveInstruction move_instruction(StateWaypoint(jwp.joint_names, jwp.waypoint), MoveInstructionType::START, seed.getProfile());
     move_instruction.setManipulatorInfo(base_mi);
     move_instruction.setDescription(description);
     move_instruction.setProfile(profile);
@@ -732,7 +731,7 @@ CompositeInstruction generateNaiveSeed(const CompositeInstruction& composite_ins
   }
   else
   {
-    MoveInstruction move_instruction(StateWaypoint(joint_names, jv), MoveInstructionType::START);
+    MoveInstruction move_instruction(StateWaypoint(joint_names, jv), MoveInstructionType::START, seed.getProfile());
     move_instruction.setManipulatorInfo(base_mi);
     move_instruction.setDescription(description);
     move_instruction.setProfile(profile);

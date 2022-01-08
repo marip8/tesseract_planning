@@ -35,7 +35,6 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 #include <tesseract_command_language/core/instruction.h>
 #include <tesseract_command_language/core/waypoint.h>
 #include <tesseract_command_language/null_waypoint.h>
-#include <tesseract_command_language/constants.h>
 #include <tesseract_command_language/profile_dictionary.h>
 #include <tesseract_command_language/types.h>
 
@@ -55,7 +54,7 @@ public:
   PlanInstruction() = default;  // Required for boost serialization do not use
   PlanInstruction(Waypoint waypoint,
                   PlanInstructionType type,
-                  std::string profile = DEFAULT_PROFILE_KEY,
+                  std::string profile,
                   ManipulatorInfo manipulator_info = ManipulatorInfo());
 
   void setWaypoint(Waypoint waypoint);
@@ -100,7 +99,7 @@ private:
   Waypoint waypoint_{ NullWaypoint() };
 
   /** @brief The profile used for this plan instruction */
-  std::string profile_{ DEFAULT_PROFILE_KEY };
+  std::string profile_;
 
   /** @brief Contains information about the manipulator associated with this instruction*/
   ManipulatorInfo manipulator_info_;

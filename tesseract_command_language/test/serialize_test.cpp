@@ -39,14 +39,14 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 using namespace tesseract_planning;
 
 CompositeInstruction getProgram()
-{
+{  
   CompositeInstruction program(
       "raster_program", CompositeInstructionOrder::ORDERED, ManipulatorInfo("manipulator", "world", "tool0"));
 
   // Start Joint Position for the program
   std::vector<std::string> joint_names = { "joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6" };
   Waypoint wp0 = StateWaypoint(joint_names, Eigen::VectorXd::Zero(6));
-  PlanInstruction start_instruction(wp0, PlanInstructionType::START);
+  PlanInstruction start_instruction(wp0, PlanInstructionType::START, program.getProfile());
   program.setStartInstruction(start_instruction);
 
   // Define raster poses
@@ -101,7 +101,7 @@ CompositeInstruction getProgram()
     transition_from_start.setDescription("transition_from_start");
     transition_from_start.push_back(plan_f1);
 
-    CompositeInstruction transitions(DEFAULT_PROFILE_KEY, CompositeInstructionOrder::UNORDERED);
+    CompositeInstruction transitions("DEFAULT", CompositeInstructionOrder::UNORDERED);
     transitions.setDescription("transitions");
     transitions.push_back(transition_from_start);
     transitions.push_back(transition_from_end);
@@ -130,7 +130,7 @@ CompositeInstruction getProgram()
     transition_from_start.setDescription("transition_from_start");
     transition_from_start.push_back(plan_f1);
 
-    CompositeInstruction transitions(DEFAULT_PROFILE_KEY, CompositeInstructionOrder::UNORDERED);
+    CompositeInstruction transitions("DEFAULT", CompositeInstructionOrder::UNORDERED);
     transitions.setDescription("transitions");
     transitions.push_back(transition_from_start);
     transitions.push_back(transition_from_end);

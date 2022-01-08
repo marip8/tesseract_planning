@@ -317,21 +317,21 @@ CompositeInstruction createStraightTrajectory()
 
   std::vector<std::string> joint_names = { "joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6" };
 
-  CompositeInstruction program;
+  CompositeInstruction program("DEFAULT");
   for (int i = 0; i < num; i++)
   {
     StateWaypoint swp(joint_names, Eigen::VectorXd::Zero(6));
     swp.position[0] = i * max / num;
     if (i == 0)
-      program.setStartInstruction(MoveInstruction(swp, MoveInstructionType::START));
+      program.setStartInstruction(MoveInstruction(swp, MoveInstructionType::START, program.getProfile()));
     else
-      program.push_back(MoveInstruction(swp, MoveInstructionType::FREESPACE));
+      program.push_back(MoveInstruction(swp, MoveInstructionType::FREESPACE, program.getProfile()));
   }
 
   // leave final velocity/acceleration unset
   StateWaypoint swp(joint_names, Eigen::VectorXd::Zero(6));
   swp.position[0] = max;
-  program.push_back(MoveInstruction(swp, MoveInstructionType::FREESPACE));
+  program.push_back(MoveInstruction(swp, MoveInstructionType::FREESPACE, program.getProfile()));
 
   return program;
 }

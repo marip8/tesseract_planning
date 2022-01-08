@@ -35,7 +35,6 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 #include <tesseract_command_language/core/instruction.h>
 #include <tesseract_command_language/core/waypoint.h>
 #include <tesseract_command_language/null_waypoint.h>
-#include <tesseract_command_language/constants.h>
 #include <tesseract_command_language/profile_dictionary.h>
 #include <tesseract_command_language/types.h>
 
@@ -55,7 +54,7 @@ public:
   MoveInstruction() = default;  // Required for boost serialization do not use
   MoveInstruction(Waypoint waypoint,
                   MoveInstructionType type,
-                  std::string profile = DEFAULT_PROFILE_KEY,
+                  std::string profile,
                   ManipulatorInfo manipulator_info = ManipulatorInfo());
 
   void setWaypoint(Waypoint waypoint);
@@ -98,7 +97,7 @@ private:
   std::string description_;
 
   /** @brief The profile used for this move instruction */
-  std::string profile_{ DEFAULT_PROFILE_KEY };
+  std::string profile_;
 
   /** @brief The assigned waypoint (Cartesian or Joint) */
   Waypoint waypoint_{ NullWaypoint() };
