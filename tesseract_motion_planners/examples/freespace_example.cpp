@@ -39,6 +39,7 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 // OMPL
 #include <tesseract_motion_planners/ompl/ompl_motion_planner.h>
 #include <tesseract_motion_planners/ompl/profile/ompl_composite_profile_rvss.h>
+#include <tesseract_motion_planners/ompl/profile/ompl_waypoint_profile.h>
 #include <tesseract_motion_planners/ompl/ompl_planner_configurator.h>
 // TrajOpt
 #include <tesseract_motion_planners/trajopt/trajopt_motion_planner.h>
@@ -55,7 +56,60 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 using namespace tesseract_planning;
 using namespace tesseract_planning::profile_ns;
 
-int main(int /*argc*/, char** /*argv*/)
+static const std::string PROFILE_NAME = "DEFAULT";
+
+std::string locateResource(const std::string& url)
+{
+  std::string mod_url = url;
+  if (url.find("package://tesseract_support") == 0)
+  {
+    mod_url.erase(0, strlen("package://tesseract_support"));
+    size_t pos = mod_url.find('/');
+    if (pos == std::string::npos)
+    {
+      return std::string();
+    }
+
+    std::string package = mod_url.substr(0, pos);
+    mod_url.erase(0, pos);
+    std::string package_path = std::string(TESSERACT_SUPPORT_DIR);
+
+    if (package_path.empty())
+    {
+      return std::string();
+    }
+
+    mod_url = package_path + mod_url;
+  }
+
+  return mod_url;
+}
+
+std::shared_ptr<OMPLCompositeProfileRVSS> createOMPLCompositeProfile()
+{
+  auto composite_profile = std::make_shared<OMPLCompositeProfileRVSS>();
+  composite_profile->collision_check_config.contact_manager_config.margin_data_override_type =
+      tesseract_collision::CollisionMarginOverrideType::OVERRIDE_DEFAULT_MARGIN;
+  composite_profile->collision_check_config.contact_manager_config.margin_data.setDefaultCollisionMargin(0.025);
+  composite_profile->collision_check_config.longest_valid_segment_length = 0.1;
+  composite_profile->collision_check_config.type = tesseract_collision::CollisionEvaluatorType::CONTINUOUS;
+
+  return composite_profile;
+}
+
+std::shared_ptr<OMPLPlannerProfile> createOMPLPlannerProfile()
+{
+  auto planner_profile = std::make_shared<OMPLPlannerProfile>();
+  planner_profile->params.planning_time = 10.0;
+  planner_profile->params.optimize = false;
+  planner_profile->params.max_solutions = 2;
+  planner_profile->params.simplify = false;
+  planner_profile->params.planners = { std::make_shared<RRTConnectConfigurator>(),
+                                       std::make_shared<RRTConnectConfigurator>() };
+  return planner_profile;
+}
+
+int main(int argc, char** argv)
 {
   try
   {
@@ -68,7 +122,8 @@ int main(int /*argc*/, char** /*argv*/)
 
     // Dynamically load ignition visualizer if it exists
     tesseract_visualization::VisualizationLoader loader;
-    auto plotter = loader.get();
+    const std::string plugin_name = argc < 2 ? "" : argv[1];
+    auto plotter = loader.get(plugin_name);
 
     if (plotter != nullptr)
     {
@@ -94,14 +149,16 @@ int main(int /*argc*/, char** /*argv*/)
                                                  Eigen::Quaterniond(0, 0, -1.0, 0)) };
 
     // Define Plan Instructions
-    MoveInstruction start_instruction(wp0, MoveInstructionType::FREESPACE, "DEFAULT");
-    MoveInstruction plan_f1(wp1, MoveInstructionType::FREESPACE, "DEFAULT");
+    MoveInstruction start_instruction(wp0, MoveInstructionType::FREESPACE, "DEFAULT", manip);
+    MoveInstruction plan_f1(wp1, MoveInstructionType::FREESPACE, "DEFAULT", manip);
+    MoveInstruction plan_f2(wp0, PlanInstructionType::FREESPACE, "DEFAULT", manip);
 
     // Create program
     CompositeInstruction program;
     program.setManipulatorInfo(manip);
     program.appendMoveInstruction(start_instruction);
     program.appendMoveInstruction(plan_f1);
+    program.appendMoveInstruction(plan_f2);
 
     // Plot Program
     if (plotter)
@@ -115,10 +172,9 @@ int main(int /*argc*/, char** /*argv*/)
 
     // Profile Dictionary
     auto profiles = std::make_shared<ProfileDictionary>();
-    profiles->addProfile<PlannerProfile<OMPLPlannerParameters>>(
-        OMPL_DEFAULT_NAMESPACE, "DEFAULT", ompl_planner_profile);
-    profiles->addProfile<CompositeProfile<OMPLCompositeProfileData>>(
-        OMPL_DEFAULT_NAMESPACE, "DEFAULT", ompl_composite_profile);
+    profiles->planner_profiles[OMPL_DEFAULT_NAMESPACE][PROFILE_NAME] = createOMPLPlannerProfile();
+    profiles->composite_profiles[OMPL_DEFAULT_NAMESPACE][PROFILE_NAME] = createOMPLCompositeProfile();
+    profiles->waypoint_profiles[OMPL_DEFAULT_NAMESPACE][PROFILE_NAME] = std::make_shared<OMPLWaypointProfile>();
 
     // Create a seed
     CompositeInstruction seed = generateSeed(program, cur_state, env);
@@ -136,7 +192,7 @@ int main(int /*argc*/, char** /*argv*/)
     assert(ompl_response);
 
     // Plot OMPL Trajectory
-    if (plotter)
+    if (plotter != nullptr)
     {
       plotter->waitForInput();
       plotter->plotTrajectory(toJointTrajectory(ompl_response.results), *state_solver);
@@ -147,8 +203,8 @@ int main(int /*argc*/, char** /*argv*/)
     auto trajopt_composite_profile = std::make_shared<TrajOptDefaultCompositeProfile>();
 
     // Add the TrajOpt profiles to the dictionary
-    profiles->addProfile<TrajOptPlanProfile>(TRAJOPT_DEFAULT_NAMESPACE, "DEFAULT", trajopt_plan_profile);
-    profiles->addProfile<TrajOptCompositeProfile>(TRAJOPT_DEFAULT_NAMESPACE, "DEFAULT", trajopt_composite_profile);
+    profiles->addProfile<TrajOptPlanProfile>(TRAJOPT_DEFAULT_NAMESPACE, PROFILE_NAME, trajopt_plan_profile);
+    profiles->addProfile<TrajOptCompositeProfile>(TRAJOPT_DEFAULT_NAMESPACE, PROFILE_NAME, trajopt_composite_profile);
 
     // Update the seed to be the OMPL trajecory
     request.seed = ompl_response.results;
