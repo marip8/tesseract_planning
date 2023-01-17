@@ -17,18 +17,18 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 namespace tesseract_planning
 {
 std::any OMPLCompositeProfileRVSS::create(const CompositeInstruction& instruction,
-                                          const tesseract_environment::Environment& env) const
+                                          tesseract_environment::Environment::ConstPtr env) const
 {
-  for (const Instruction& inst : instruction)
+  for (const InstructionPoly& inst : instruction)
   {
-    const auto& goal_instruction = inst.as<PlanInstruction>();
-    if (goal_instruction.getPlanType() != PlanInstructionType::FREESPACE)
+    const auto& goal_instruction = inst.as<MoveInstructionPoly>();
+    if (goal_instruction.getMoveType() != MoveInstructionType::FREESPACE)
       throw std::runtime_error("Only freespace plan instruction types are currently supported");
   }
 
   // Get the joint group information from the composite instruction and environment
   const tesseract_kinematics::JointGroup::ConstPtr joint_group =
-      env.getJointGroup(instruction.getManipulatorInfo().manipulator);
+      env->getJointGroup(instruction.getManipulatorInfo().manipulator);
   const std::vector<std::string> joint_names = joint_group->getJointNames();
   const Eigen::MatrixX2d limits = joint_group->getLimits().joint_limits;
   const Eigen::Index dof = joint_group->numJoints();
@@ -82,7 +82,7 @@ std::any OMPLCompositeProfileRVSS::create(const CompositeInstruction& instructio
         case tesseract_collision::CollisionEvaluatorType::LVS_DISCRETE:
         {
           auto svc = std::make_shared<StateCollisionValidator>(
-              simple_setup->getSpaceInformation(), env, joint_group, collision_check_config, extractor);
+              simple_setup->getSpaceInformation(), *env, joint_group, collision_check_config, extractor);
           csvc->addStateValidator(svc);
           break;
         }
@@ -117,7 +117,7 @@ std::any OMPLCompositeProfileRVSS::create(const CompositeInstruction& instructio
       {
         mv = std::make_shared<ContinuousMotionValidator>(simple_setup->getSpaceInformation(),
                                                          custom_validity_checker,
-                                                         env,
+                                                         *env,
                                                          joint_group,
                                                          collision_check_config,
                                                          extractor);

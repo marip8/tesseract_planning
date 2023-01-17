@@ -72,6 +72,7 @@ struct OMPLPlannerParameters
 
 /** @brief Function signature for extracting a Tesseract state representations from an OMPL state representation */
 using OMPLStateExtractor = std::function<Eigen::Map<Eigen::VectorXd>(const ompl::base::State*)>;
+// using OMPLStateExtractor = std::function<WaypointPoly(const ompl::base::State*)>;
 
 /**
  * Structure for the output data of an OMPL composite instruction

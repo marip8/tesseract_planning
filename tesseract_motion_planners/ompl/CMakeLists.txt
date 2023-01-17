@@ -12,7 +12,6 @@ set(OMPL_SRC
     src/weighted_real_vector_state_sampler.cpp
     # Motion planner
     src/ompl_planner_configurator.cpp
-    src/ompl_motion_planner_status_category.cpp
     src/ompl_motion_planner.cpp
     src/utils.cpp
     # Profiles

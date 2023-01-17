@@ -70,7 +70,7 @@ public:
    * @brief Creates the OMPL composite profile data given a composite instruction and environment
    */
   std::any create(const CompositeInstruction& instruction,
-                  const tesseract_environment::Environment& env) const override;
+                  tesseract_environment::Environment::ConstPtr env) const override;
 
   /**
    * @brief Seed for OMPL random number generator

@@ -8,7 +8,7 @@ namespace tesseract_planning
 class OMPLWaypointProfile : public WaypointProfile
 {
 public:
-  std::any create(const Instruction& instruction, const tesseract_environment::Environment& env) const override;
+  std::any create(const MoveInstruction& instruction, tesseract_environment::Environment::ConstPtr env) const override;
 
 private:
   friend class boost::serialization::access;

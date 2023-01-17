@@ -31,11 +31,11 @@ void checkCollision(const Eigen::VectorXd& state,
 Eigen::VectorXd updateLimits(const Eigen::Ref<const Eigen::VectorXd>& joint_waypoint,
                              const tesseract_common::KinematicLimits& limits)
 {
-  if (!tesseract_common::satisfiesPositionLimits(joint_waypoint, limits.joint_limits))
+  if (!tesseract_common::satisfiesPositionLimits<double>(joint_waypoint, limits.joint_limits))
     throw std::runtime_error("State violates joint limits");
 
   Eigen::VectorXd tmp(joint_waypoint);
-  tesseract_common::enforcePositionLimits(tmp, limits.joint_limits);
+  tesseract_common::enforcePositionLimits<double>(tmp, limits.joint_limits);
   return tmp;
 }
 
@@ -97,33 +97,33 @@ tesseract_kinematics::IKSolutions getValidIKSolutions(const Eigen::Isometry3d& c
   return valid_solutions;
 }
 
-std::any OMPLWaypointProfile::create(const Instruction& instruction,
-                                     const tesseract_environment::Environment& env) const
+std::any OMPLWaypointProfile::create(const MoveInstruction& instruction,
+                                     tesseract_environment::Environment::ConstPtr env) const
 {
-  const auto& plan_instruction = instruction.as<PlanInstruction>();
-  const tesseract_common::ManipulatorInfo& mi = plan_instruction.getManipulatorInfo();
-  const Waypoint& waypoint = plan_instruction.getWaypoint();
+  const tesseract_common::ManipulatorInfo& mi = instruction.getManipulatorInfo();
+  const WaypointPoly& waypoint = instruction.getWaypoint();
 
-  if (isCartesianWaypoint(waypoint))
+  if (waypoint.isCartesianWaypoint())
   {
-    const auto& cw = waypoint.as<CartesianWaypoint>();
-    return getValidIKSolutions(cw, mi, env);
+    const auto& cw = waypoint.as<CartesianWaypointPoly>();
+    return getValidIKSolutions(cw.getTransform(), mi, *env);
   }
 
-  if (isJointWaypoint(waypoint))
+  if (waypoint.isJointWaypoint())
   {
-    const auto& jw = waypoint.as<JointWaypoint>();
-    const Eigen::VectorXd updated_state = updateLimits(jw, env.getJointGroup(mi.manipulator)->getLimits());
-    checkCollision(updated_state, env, env.getJointGroup(mi.manipulator));
+    const auto& jw = waypoint.as<JointWaypointPoly>();
+    const Eigen::VectorXd updated_state =
+        updateLimits(jw.getPosition(), env->getJointGroup(mi.manipulator)->getLimits());
+    checkCollision(updated_state, *env, env->getJointGroup(mi.manipulator));
     return std::vector<Eigen::VectorXd>{ updated_state };
   }
 
-  if (isStateWaypoint(waypoint))
+  if (waypoint.isStateWaypoint())
   {
-    const auto& sw = waypoint.as<StateWaypoint>();
-    Eigen::Map<const Eigen::VectorXd> state(sw.position.data(), sw.position.size());
-    const Eigen::VectorXd updated_state = updateLimits(state, env.getJointGroup(mi.manipulator)->getLimits());
-    checkCollision(updated_state, env, env.getJointGroup(mi.manipulator));
+    const auto& sw = waypoint.as<StateWaypointPoly>();
+    Eigen::Map<const Eigen::VectorXd> state(sw.getPosition().data(), sw.getPosition().size());
+    const Eigen::VectorXd updated_state = updateLimits(state, env->getJointGroup(mi.manipulator)->getLimits());
+    checkCollision(updated_state, *env, env->getJointGroup(mi.manipulator));
     return std::vector<Eigen::VectorXd>{ updated_state };
   }
 
