@@ -203,22 +203,20 @@ PlannerResponse OMPLMotionPlanner::solve(const PlannerRequest& request) const
     {
       p->simple_setup->simplifySolution();
     }
+
+    // Interpolate the path if it shouldn't be simplified and there are currently fewer states than requested
+    auto num_output_states = static_cast<unsigned>(p->n_output_states);
+    if (p->simple_setup->getSolutionPath().getStateCount() < num_output_states)
+    {
+      p->simple_setup->getSolutionPath().interpolate(num_output_states);
+    }
     else
     {
-      // Interpolate the path if it shouldn't be simplified and there are currently fewer states than requested
-      auto num_output_states = static_cast<unsigned>(p->n_output_states);
+      // Now try to simplify the trajectory to get it under the requested number of output states
+      // The interpolate function only executes if the current number of states is less than the requested
+      p->simple_setup->simplifySolution();
       if (p->simple_setup->getSolutionPath().getStateCount() < num_output_states)
-      {
         p->simple_setup->getSolutionPath().interpolate(num_output_states);
-      }
-      else
-      {
-        // Now try to simplify the trajectory to get it under the requested number of output states
-        // The interpolate function only executes if the current number of states is less than the requested
-        p->simple_setup->simplifySolution();
-        if (p->simple_setup->getSolutionPath().getStateCount() < num_output_states)
-          p->simple_setup->getSolutionPath().interpolate(num_output_states);
-      }
     }
   }
 
