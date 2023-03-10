@@ -43,7 +43,7 @@ TESSERACT_COMMON_IGNORE_WARNINGS_PUSH
 #include <Eigen/Eigen>
 TESSERACT_COMMON_IGNORE_WARNINGS_POP
 
-#include <tesseract_time_parameterization/core/trajectory_container.h>
+#include <tesseract_time_parameterization/core/time_parameterization.h>
 
 namespace tesseract_planning
 {
@@ -74,75 +74,33 @@ namespace tesseract_planning
 /// If this is a problem, try retuning (increasing) the limits.
 ///
 
-class IterativeSplineParameterization
+class IterativeSplineParameterization : public TimeParameterization
 {
 public:
-  IterativeSplineParameterization(bool add_points = true);
-  virtual ~IterativeSplineParameterization();
+  IterativeSplineParameterization(const Eigen::Ref<const Eigen::VectorXd>& max_velocity,
+                                  const Eigen::Ref<const Eigen::VectorXd>& max_acceleration,
+                                  const Eigen::Ref<const Eigen::VectorXd>& max_velocity_scaling_factors,
+                                  const Eigen::Ref<const Eigen::VectorXd>& max_acceleration_scaling_factors,
+                                  bool add_points = true);
+
+  IterativeSplineParameterization(double max_velocity,
+                                  double max_acceleration,
+                                  double max_velocity_scaling_factor = 1.0,
+                                  double max_acceleration_scaling_factor = 1.0,
+                                  bool add_points = true);
+
+  IterativeSplineParameterization(const std::vector<double>& max_velocity,
+                                  const std::vector<double>& max_acceleration,
+                                  double max_velocity_scaling_factor = 1.0,
+                                  double max_acceleration_scaling_factor = 1.0,
+                                  bool add_points = true);
+
   IterativeSplineParameterization(const IterativeSplineParameterization&) = default;
   IterativeSplineParameterization& operator=(const IterativeSplineParameterization&) = default;
   IterativeSplineParameterization(IterativeSplineParameterization&&) = default;
   IterativeSplineParameterization& operator=(IterativeSplineParameterization&&) = default;
 
-  /**
-   * @brief Compute the time stamps for a flattened vector of move instruction
-   * @param trajectory Flattended vector of move instruction
-   * @param max_velocities The max velocities for each joint
-   * @param max_accelerations The max acceleration for each joint
-   * @param max_velocity_scaling_factor The max velocity scaling factor
-   * @param max_acceleration_scaling_factor The max acceleration scaling factor
-   * @return True if successful, otherwise false
-   */
-  bool compute(TrajectoryContainer& trajectory,
-               const double& max_velocity,
-               const double& max_acceleration,
-               double max_velocity_scaling_factor = 1.0,
-               double max_acceleration_scaling_factor = 1.0) const;
-
-  /**
-   * @brief Compute the time stamps for a flattened vector of move instruction
-   * @param trajectory Flattended vector of move instruction
-   * @param max_velocities The max velocities for each joint
-   * @param max_accelerations The max acceleration for each joint
-   * @param max_velocity_scaling_factor The max velocity scaling factor
-   * @param max_acceleration_scaling_factor The max acceleration scaling factor
-   * @return True if successful, otherwise false
-   */
-  bool compute(TrajectoryContainer& trajectory,
-               const std::vector<double>& max_velocity,
-               const std::vector<double>& max_acceleration,
-               double max_velocity_scaling_factor = 1.0,
-               double max_acceleration_scaling_factor = 1.0) const;
-
-  /**
-   * @brief Compute the time stamps for a flattened vector of move instruction
-   * @param trajectory Flattended vector of move instruction
-   * @param max_velocities The max velocities for each joint
-   * @param max_accelerations The max acceleration for each joint
-   * @param max_velocity_scaling_factor The max velocity scaling factor
-   * @param max_acceleration_scaling_factor The max acceleration scaling factor
-   * @return True if successful, otherwise false
-   */
-  bool compute(TrajectoryContainer& trajectory,
-               const Eigen::Ref<const Eigen::VectorXd>& max_velocity,
-               const Eigen::Ref<const Eigen::VectorXd>& max_acceleration,
-               double max_velocity_scaling_factor = 1.0,
-               double max_acceleration_scaling_factor = 1.0) const;
-
-  /**
-   * @brief Compute the time stamps for a flattened vector of move instruction
-   * @param trajectory Flattended vector of move instruction
-   * @param max_velocities The max velocities for each joint
-   * @param max_accelerations The max acceleration for each joint
-   * @param max_velocity_scaling_factor The max velocity scaling factor. Size should be trajectory.size()
-   * @param max_acceleration_scaling_factor The max acceleration scaling factor. Size should be trajectory.size()
-   * @return True if successful, otherwise false
-   */
-  bool compute(TrajectoryContainer& trajectory,
-               const Eigen::Ref<const Eigen::VectorXd>& max_velocity,
-               const Eigen::Ref<const Eigen::VectorXd>& max_acceleration,
-               const Eigen::Ref<const Eigen::VectorXd>& max_velocity_scaling_factors,
-               const Eigen::Ref<const Eigen::VectorXd>& max_acceleration_scaling_factors) const;
+  bool compute(TrajectoryContainer& trajectory) const override;
 
 private:
   /**
@@ -150,8 +108,13 @@ private:
    *
    * If false, move the 2nd and 2nd-last points.
    */
+  Eigen::VectorXd max_velocity_;
+  Eigen::VectorXd max_acceleration_;
+  Eigen::VectorXd max_velocity_scaling_factors_;
+  Eigen::VectorXd max_acceleration_scaling_factors_;
   bool add_points_;
 };
+
 }  // namespace tesseract_planning
 
 #endif  // TESSERACT_TIME_PARAMETERIZATION_ITERATIVE_SPLINE_PARAMETERIZATION_H
