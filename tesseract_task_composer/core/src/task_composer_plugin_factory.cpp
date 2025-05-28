@@ -431,4 +431,15 @@ YAML::Node TaskComposerPluginFactory::getConfig() const
 
   return config;
 }
+
+std::vector<std::string> TaskComposerPluginFactory::getAvailableTaskComposerNodePlugins() const
+{
+  return impl_->plugin_loader.getAvailablePlugins("TaskNode");
+}
+
+std::vector<std::string> TaskComposerPluginFactory::getAvailableTaskComposerExecutorPlugins() const
+{
+  return impl_->plugin_loader.getAvailablePlugins("TaskExec");
+}
+
 }  // namespace tesseract_planning
